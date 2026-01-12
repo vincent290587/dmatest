@@ -146,18 +146,25 @@ static int _init() {
 
     // ... after socket() and bind() ...
 
-    struct can_filter rfilter[1]; // Array size = number of filters
+    struct can_filter rfilter[3]; // Array size = number of filters
 
-    // Filter 1: Match exactly ID 0x123
-    rfilter[0].can_id   = flt_mask | CAN_EFF_FLAG;
-    rfilter[0].can_mask = CAN_SFF_MASK | CAN_EFF_FLAG;
+    // Local address filter
+    rfilter[0].can_id   = (local_addr << 21) | CAN_EFF_FLAG;
+    rfilter[0].can_mask = (0xFF << 21) | CAN_EFF_FLAG;
 
-    TRACE_INFO("CAN filter: 0x%08X", flt_mask);
+    TRACE_INFO("CAN filter0: 0x%08X", flt_mask);
 
-    // Filter 2: Match a range (e.g., 0x200, 0x201, 0x202, 0x203)
-    // We use a mask where the last two bits are 0 (don't care)
-    // rfilter[1].can_id   = 0x200;
-    // rfilter[1].can_mask = 0x7FC; 
+    // Timesync filter
+    rfilter[1].can_id   = (CANTS_TT_TIMESYNC << 18) | CAN_EFF_FLAG;
+    rfilter[1].can_mask = (0x7 << 18) | CAN_EFF_FLAG; 
+
+    TRACE_INFO("CAN filter1: 0x%08X", rfilter[1].can_id);
+
+    // Unsolicitied TM filter
+    rfilter[2].can_id   = (CANTS_TT_UNSOLICITIED_TELEMETRY << 18) | CAN_EFF_FLAG;
+    rfilter[2].can_mask = (0x7 << 18) | CAN_EFF_FLAG; 
+
+    TRACE_INFO("CAN filter2: 0x%08X", rfilter[1].can_id);
 
     // Apply the filter array to the socket
     setsockopt(can.s, SOL_CAN_RAW, CAN_RAW_FILTER, &rfilter, sizeof(rfilter));
@@ -168,13 +175,17 @@ static int _init() {
 static void _process(struct can_descr *pcan, const struct can_frame pcanmsg)
 {
     uint32_t ext_id = pcanmsg.can_id & CAN_EFF_MASK;
-    uint32_t ext_flt = (ext_id & flt_mask);
 
-    TRACE_INFO("CAN-TS received message ext. ID: 0x%07X", ext_id);
+    TRACE_INFO("CAN-TS received message full ext. ID: 0x%08X", pcanmsg.can_id);
 
     TRACE_INFO("CAN-TS received message:");
-    TRACE_INFO("ID  : 0x%08X", pcanmsg.can_id);
+    TRACE_INFO("ID  : 0x%08X", ext_id);
     TRACE_INFO("Len : 0x%08X", pcanmsg.len);
+
+    uint8_t src = (ext_id >> 10u) & 0xFFu;
+    TRACE_INFO("Src : 0x%08X", src);
+    uint8_t dst = (ext_id >> 21u) & 0xFFu;
+    TRACE_INFO("Dst : 0x%08X", dst);
 
 }
 
@@ -216,8 +227,8 @@ int main(void) {
 
     // Other: local 0x09 -> 0x18
 
-    local_addr  = 0x10u;   // 0x10u
-    master_addr = 0x02u;   // 0x18u
+    local_addr  = 0x18u;
+    master_addr = 0x02u;
 
     int ret = _init();
     TRACE_INFO("CAN init ret=%d", ret);
