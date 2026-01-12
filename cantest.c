@@ -205,12 +205,15 @@ static void _receive_thread(struct can_descr *pcan) {
 
 int main(void) {
 
+    setvbuf(stdout, NULL, _IONBF, 0); // turn off buffering for stdout
+
     // Other: local 0x09 -> 0x18
 
     local_addr  = 0x10u;   // 0x10u
     master_addr = 0x18u;   // 0x18u
 
-    _init();
+    int ret = _init();
+    TRACE_INFO("CAN init ret=%d", ret);
 
     _receive_thread(&can);
 
