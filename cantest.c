@@ -52,15 +52,6 @@ struct can_descr {
     int to_terminate;
 };
 
-static uint32_t flt_keepalive = 0U;
-static uint32_t flt_mask      = 0U;
-static uint32_t flt_timesync  = 0U;
-static uint32_t flt_tlc       = 0U;
-static uint32_t flt_tlm       = 0U;
-static uint32_t flt_gblk      = 0U;
-static uint32_t flt_sblk      = 0U;
-static uint32_t flt_unsol_tlm = 0U;
-
 static uint8_t local_addr  = 0U;                                                /* Indicates CAN-TS address of local device */
 static uint8_t master_addr = 0U;                                                /* Indicates CAN-TS address of master device, or 0 if master mode used */
 
@@ -115,35 +106,6 @@ static int _init() {
         return ret;
     }
 
-    //
-    
-    flt_mask = CANTS_EXT_ID(0xFFU, 0x07U, ((master_addr == 0u) ? 0U : 0xFFU),   /* Masks only Destination Address and Frame Type, also masks Source Address in slave mode */
-                            0U, 0U);
-
-    flt_timesync = CANTS_EXT_ID(CANTS_BROADCAST_TIMESYNC_ADDR,                  /* Checks Destination Address (Broadcast Time Synchronization Address), Transfer Type 0x00 (Time Synchronization), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
-                                 CANTS_TT_TIMESYNC,
-                                 master_addr, 0U, 0U);
-
-    flt_keepalive = CANTS_EXT_ID(CANTS_BROADCAST_KEEPALIVE_ADDR,                /* Checks Destination Address (Broadcast Keep-Alive Address), Transfer Type 0x01 (Unsolicited Telemetry), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
-                                 CANTS_TT_UNSOLICITIED_TELEMETRY,
-                                 master_addr, 0U, 0U);
-
-    flt_tlc = CANTS_EXT_ID(local_addr, CANTS_TT_TELECOMMAND,                    /* Checks Destination Address (Local Address), Transfer Type 0x02 (Telecommand), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
-                           master_addr, 0U, 0U);
-
-    flt_tlm = CANTS_EXT_ID(local_addr, CANTS_TT_TELEMETRY,                      /* Checks Destination Address (Local Address), Transfer Type 0x03 (Telemetry), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
-                           master_addr, 0U, 0U);
-
-    flt_gblk = CANTS_EXT_ID(local_addr, CANTS_TT_GETBLOCK,                      /* Checks Destination Address (Local Address), Transfer Type 0x03 (Telemetry), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
-                          master_addr, 0U, 0U);
-
-    flt_sblk = CANTS_EXT_ID(local_addr, CANTS_TT_SETBLOCK,                      /* Checks Destination Address (Local Address), Transfer Type 0x03 (Telemetry), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
-                          master_addr, 0U, 0U);
-
-    flt_unsol_tlm = CANTS_EXT_ID(local_addr,                                    /* Checks Destination Address (Local Address), Transfer Type 0x01 (Unsolicited Telemetry), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
-                                 CANTS_TT_UNSOLICITIED_TELEMETRY,
-                                 master_addr, 0U, 0U);
-
     // ... after socket() and bind() ...
 
     struct can_filter rfilter[3]; // Array size = number of filters
@@ -152,7 +114,7 @@ static int _init() {
     rfilter[0].can_id   = (local_addr << 21) | CAN_EFF_FLAG;
     rfilter[0].can_mask = (0xFF << 21) | CAN_EFF_FLAG;
 
-    TRACE_INFO("CAN filter0: 0x%08X", flt_mask);
+    TRACE_INFO("CAN filter0: 0x%08X", rfilter[0].can_id);
 
     // Timesync filter
     rfilter[1].can_id   = (CANTS_TT_TIMESYNC << 18) | CAN_EFF_FLAG;
@@ -161,10 +123,11 @@ static int _init() {
     TRACE_INFO("CAN filter1: 0x%08X", rfilter[1].can_id);
 
     // Unsolicitied TM filter
+    // TODO now these are always received even for other destinations
     rfilter[2].can_id   = (CANTS_TT_UNSOLICITIED_TELEMETRY << 18) | CAN_EFF_FLAG;
     rfilter[2].can_mask = (0x7 << 18) | CAN_EFF_FLAG; 
 
-    TRACE_INFO("CAN filter2: 0x%08X", rfilter[1].can_id);
+    TRACE_INFO("CAN filter2: 0x%08X", rfilter[2].can_id);
 
     // Apply the filter array to the socket
     setsockopt(can.s, SOL_CAN_RAW, CAN_RAW_FILTER, &rfilter, sizeof(rfilter));
@@ -186,6 +149,42 @@ static void _process(struct can_descr *pcan, const struct can_frame pcanmsg)
     TRACE_INFO("Src : 0x%08X", src);
     uint8_t dst = (ext_id >> 21u) & 0xFFu;
     TRACE_INFO("Dst : 0x%08X", dst);
+
+    ///
+    
+    uint32_t ext_type = (ext_id >> 18) & 0x7u;
+
+    if(ext_type == CANTS_TT_UNSOLICITIED_TELEMETRY)                 /* Checks Destination Address (Local Address), Transfer Type 0x01 (Unsolicited Telemetry), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
+    {
+        if (dst == 1u) {
+            TRACE_INFO("CANTS_KA");
+        } else {
+            TRACE_INFO("CANTS_TT_UNSOLICITIED_TELEMETRY");
+        }
+    }
+    else if(ext_type == CANTS_TT_TELECOMMAND)                  /* Checks Destination Address (Local Address), Transfer Type 0x02 (Telecommand), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
+    {
+        TRACE_INFO("CANTS_TT_TELECOMMAND");
+    }
+    else if(ext_type == CANTS_TT_TELEMETRY)                  /* Checks Destination Address (Local Address), Transfer Type 0x03 (Telemetry), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
+    {
+        TRACE_INFO("CANTS_TT_TELEMETRY");
+    }
+    else if(ext_type == CANTS_TT_GETBLOCK)                 /* Checks Destination Address (Local Address), Transfer Type 0x03 (Telemetry), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
+    {
+        TRACE_INFO("CANTS_TT_GETBLOCK");
+    }
+    else if(ext_type == CANTS_TT_SETBLOCK)                 /* Checks Destination Address (Local Address), Transfer Type 0x03 (Telemetry), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
+    {
+        TRACE_INFO("CANTS_TT_SETBLOCK");
+    }
+    else if(ext_type == CANTS_TT_TIMESYNC)             /* Checks Destination Address (Time Synchronization Address), Transfer Type 0x00 (Time Synchronization), Source Address (Master Address or any), Frame Type (any), Command Channel (any) */
+    {
+        TRACE_INFO("CANTS_TT_TIMESYNC");
+    }
+    else {
+        TRACE_ERROR("Unknown CAN message");
+    }
 
 }
 
