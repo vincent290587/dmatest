@@ -44,16 +44,6 @@ typedef enum {
 
 #include "cants_frame_types.h"
 
-/**
- * Makes CAN-TS external ID: 0b000.dddddddd.ttt.ssssssss.cc.cccccccc
- */
-#define CANTS_EXT_ID(dst, trans_type, src, cmd_type, cmd_channel)\
-                    (((uint32_t)(dst)        << 21U) |\
-                    ((uint32_t)(trans_type)  << 18U) |\
-                    ((uint32_t)(src)         << 10U) |\
-                    ((uint32_t)(cmd_type)    <<  8U) |\
-                    ((uint32_t)(cmd_channel) <<  0U))
-
 struct can_descr {
     struct sockaddr_can addr;
     struct ifreq ifr;
@@ -125,6 +115,7 @@ static int _init() {
         return ret;
     }
 
+    //
     
     flt_mask = CANTS_EXT_ID(0xFFU, 0x07U, ((master_addr == 0u) ? 0U : 0xFFU),   /* Masks only Destination Address and Frame Type, also masks Source Address in slave mode */
                             0U, 0U);
@@ -153,6 +144,23 @@ static int _init() {
                                  CANTS_TT_UNSOLICITIED_TELEMETRY,
                                  master_addr, 0U, 0U);
 
+    // ... after socket() and bind() ...
+
+    struct can_filter rfilter[1]; // Array size = number of filters
+
+    // Filter 1: Match exactly ID 0x123
+    rfilter[0].can_id   = flt_mask | CAN_EFF_FLAG;
+    rfilter[0].can_mask = CAN_SFF_MASK | CAN_EFF_FLAG;
+
+    TRACE_INFO("CAN filter: 0x%08X", flt_mask);
+
+    // Filter 2: Match a range (e.g., 0x200, 0x201, 0x202, 0x203)
+    // We use a mask where the last two bits are 0 (don't care)
+    // rfilter[1].can_id   = 0x200;
+    // rfilter[1].can_mask = 0x7FC; 
+
+    // Apply the filter array to the socket
+    setsockopt(can.s, SOL_CAN_RAW, CAN_RAW_FILTER, &rfilter, sizeof(rfilter));
 
     return 0;
 }
@@ -167,7 +175,6 @@ static void _process(struct can_descr *pcan, const struct can_frame pcanmsg)
     TRACE_INFO("CAN-TS received message:");
     TRACE_INFO("ID  : 0x%08X", pcanmsg.can_id);
     TRACE_INFO("Len : 0x%08X", pcanmsg.len);
-    TRACE_INFO("Type: 0x%08X", pcanmsg.data);
 
 }
 
@@ -210,7 +217,7 @@ int main(void) {
     // Other: local 0x09 -> 0x18
 
     local_addr  = 0x10u;   // 0x10u
-    master_addr = 0x18u;   // 0x18u
+    master_addr = 0x02u;   // 0x18u
 
     int ret = _init();
     TRACE_INFO("CAN init ret=%d", ret);
