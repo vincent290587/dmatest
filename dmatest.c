@@ -97,7 +97,13 @@ void dma_mm2s_status(unsigned int* dma_virtual_address) {
 
 void dma_mm2s_ctrl(unsigned int* dma_virtual_address) {
     unsigned int status = dma_get(dma_virtual_address, MM2S_CONTROL_REGISTER);
-    printf("Memory-mapped to stream control (0x%08x@0x%02x):", status, MM2S_CONTROL_REGISTER);
+    printf("MM2S control (0x%08x@0x%02x):", status, MM2S_CONTROL_REGISTER);
+    printf("\n");
+}
+
+void dma_s2mm_ctrl(unsigned int* dma_virtual_address) {
+    unsigned int status = dma_get(dma_virtual_address, S2MM_CONTROL_REGISTER);
+    printf("S2MM control (0x%08x@0x%02x):", status, S2MM_CONTROL_REGISTER);
     printf("\n");
 }
 
@@ -108,7 +114,7 @@ static void memdump(void* virtual_address, int byte_count) {
         printf("%02x", p[offset]);
         if (offset % 4 == 3) { printf(" "); }
     }
-    printf("\n");
+    printf("\n\n");
 }
 
 
@@ -116,7 +122,7 @@ static void memdump(void* virtual_address, int byte_count) {
 #define SRC_PHYS       0x30000000
 #define DST_PHYS       0x34000000
 
-#define TEST_LEN       32u
+#define TEST_LEN       512u
 
 int main() {
 
@@ -143,41 +149,24 @@ int main() {
     dma_s2mm_status(virtual_address);
     dma_mm2s_status(virtual_address);
 
-    // printf("Halting DMA\n");
-    // dma_set(virtual_address, S2MM_CONTROL_REGISTER, 0);
-    // dma_set(virtual_address, MM2S_CONTROL_REGISTER, 0);
-    // dma_s2mm_status(virtual_address);
-    // dma_mm2s_status(virtual_address);
-
-    printf("Starting DMA channels \n");
-    dma_set(virtual_address, MM2S_CONTROL_REGISTER, 1);
-    dma_set(virtual_address, S2MM_CONTROL_REGISTER, 1);
-
     printf("Providing addresses\n");
     dma_set(virtual_address, MM2S_START_ADDRESS, SRC_PHYS); // Write source address
     dma_set(virtual_address, S2MM_DESTINATION_ADDRESS, DST_PHYS); // Write destination address
     dma_mm2s_status(virtual_address);
     dma_s2mm_status(virtual_address);
 
+    dma_mm2s_ctrl(virtual_address);
+    dma_s2mm_ctrl(virtual_address);
+
+    printf("Starting DMA channels \n");
+    dma_set(virtual_address, S2MM_CONTROL_REGISTER, 1);
+    dma_set(virtual_address, MM2S_CONTROL_REGISTER, 1);
+
     printf("Triggering transfer\n");
     dma_set(virtual_address, S2MM_LENGTH, TEST_LEN);
     dma_set(virtual_address, MM2S_LENGTH, TEST_LEN);
     dma_s2mm_status(virtual_address);
     dma_mm2s_status(virtual_address);
-
-    dma_mm2s_ctrl(virtual_address);
-
-    // printf("Starting S2MM channel with all interrupts masked...\n");
-    // dma_set(virtual_address, S2MM_CONTROL_REGISTER, 0xf001);
-    // dma_s2mm_status(virtual_address);
-
-    // printf("Starting MM2S channel with all interrupts masked...\n");
-    // dma_set(virtual_address, MM2S_CONTROL_REGISTER, 0xf001);
-    // dma_mm2s_status(virtual_address);
-
-    // printf("Starting DMA channels \n");
-    // dma_set(virtual_address, S2MM_CONTROL_REGISTER, 1);
-    // dma_set(virtual_address, MM2S_CONTROL_REGISTER, 1);
 
     printf("Waiting for MM2S synchronization...\n");
     dma_mm2s_sync(virtual_address);
@@ -190,4 +179,13 @@ int main() {
 
     printf("Destination memory block: "); 
     memdump(virtual_destination_address, TEST_LEN);
+
+    if (memcmp(virtual_destination_address, virtual_source_address, TEST_LEN)) {
+        printf("NO match \n");
+        return -1;
+    } else {
+        printf("Match ! \n");
+    }
+
+    return 0;
 }
